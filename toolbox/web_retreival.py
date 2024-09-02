@@ -2,7 +2,7 @@
 from neo4j import GraphDatabase
 
 # 设置Neo4j数据库连接
-NEO4J_URI = "bolt://localhost:7687"  # 替换为你的Neo4j URI
+NEO4J_URI = "bolt://10.7.218.37:7687"  # 替换为你的Neo4j URI
 NEO4J_USER = "neo4j"
 NEO4J_PASSWORD = "12345678"
 driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))

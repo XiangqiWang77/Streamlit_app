@@ -218,7 +218,7 @@ def configure_qa_rag_chain(llm, Graph_url, username, password, embeddings, query
 def generate_llava_output(vllm,  Graph_url, username, password, embeddings, query):
         #print(re.search(r'\{(.+?)\}',"{Neo4jquery}").group(1))
         #print("multi is",multi)
-        graph = Neo4jGraph(url="bolt://localhost:7687", username="neo4j", password="12345678")
+        graph = Neo4jGraph(url="bolt://10.7.218.37:7687", username="neo4j", password="12345678")
         Kg_output=graph.query(
             """
 MATCH (r:Bird_name)-[o:OBSERVED_AT]->(l:Location)

@@ -128,7 +128,7 @@ def construct_cypher_query(**kwargs):
 def generate_aspect_chain(vllm_name, llm_name, question, multimedia_option,  aspect, callbacks):
     if multimedia_option=="Multimedia Enabled":
         print(multimedia_option)
-        graph = Neo4jGraph(url="bolt://localhost:7687", username="neo4j", password="12345678")
+        graph = Neo4jGraph(url="bolt://10.7.218.37:7687", username="neo4j", password="12345678")
         kwargs = extract_keywords_from_question(vllm_name,question)
 
         # Now use the `kwargs` in the Cypher query construction

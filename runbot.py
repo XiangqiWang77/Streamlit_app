@@ -53,7 +53,7 @@ embeddings = OllamaEmbeddings(
 
 dimension = 4096
 
-graph = Neo4jGraph(url="bolt://localhost:7687", username="neo4j", password="12345678")
+graph = Neo4jGraph(url="bolt://10.7.218.37:7687", username="neo4j", password="12345678")
 
 def load_llm(llm_name: str, config={}):
     if llm_name == "gpt-4":
