@@ -19,13 +19,13 @@ from langchain.prompts import (
 from neo4j import GraphDatabase
 
 # 设置Neo4j数据库连接
-NEO4J_URI = "bolt://10.7.218.37:7687"  # 替换为你的Neo4j URI
+NEO4J_URI = "bolt://localhost:7687"  # 替换为你的Neo4j URI
 NEO4J_USER = "neo4j"
 NEO4J_PASSWORD = "12345678"
 driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 from toolbox.chains import generate_ticket
 import re
-
+import openai
 from toolbox.utils import ImageDownloader, convert_to_base64
 from toolbox.aspects import generate_aspect_chain
 from toolbox.web_agent import web_search_agent
@@ -34,6 +34,8 @@ from toolbox.ToG import ToG_retrieval_pipeline
 from dotenv import load_dotenv
 from typing import List, Any
 from langchain.callbacks.base import BaseCallbackHandler
+from openai import AzureOpenAI
+from openai import OpenAI
 class StreamHandler(BaseCallbackHandler):
     def __init__(self, container, initial_text=""):
         self.container = container
@@ -45,7 +47,7 @@ class StreamHandler(BaseCallbackHandler):
 load_dotenv(".env")
 
 LLM=os.getenv("LLM") #or any Ollama model tag, gpt-4, gpt-3.5, or claudev2
-EMBEDDING_MODEL=os.getenv("EMBEDDING_MODEL")  #or google-genai-embedding-001 openai, ollama, or aws
+EMBEDDING_MODEL=os.getenv("EMBEDDING_MtODEL")  #or google-genai-embedding-001 openai, ollama, or aws
 VLLM=os.getenv("VLLM") 
 NEO4J_URL=os.getenv("NEO4J_URL") 
 NEO4J_USERNAME=os.getenv("NEO4J_USERNAME") 
@@ -58,9 +60,77 @@ embeddings = OllamaEmbeddings(
         )
 
 
+
+
+# Configure the OpenAI client to use Azure
+
+openai.api_key = AZURE_OPENAI_API_KEY
+openai.api_base = AZURE_OPENAI_ENDPOINT
+
+
+def get_autocomplete_suggestions(question):
+    client = AzureOpenAI(
+        api_key=AZURE_OPENAI_API_KEY,
+        api_version="2024-06-01",
+        azure_endpoint=AZURE_OPENAI_ENDPOINT
+        )
+
+    """Call Azure OpenAI API for auto-completion."""
+    prompt="""
+    You are given a graph containing information about animals and locations in Florida. The graph consists of the following types of relationships and data:
+
+Animal-Location (OBSERVED_AT edge):
+
+Animals and locations are connected by an OBSERVED_AT edge.
+Both animals and locations have wikidata_id.
+Animals also have an IUCN_id, though not all animals have this identifier.
+The OBSERVED_AT edge contains additional details such as observed_times, dates, and multimedia information (like images or videos).
+Animal-Animal Relationships:
+
+Animals are connected through relationships like PreysOn and InteractWith, representing ecological interactions.
+Event-Location (Happened_In edge):
+
+Events (e.g., natural disasters) are connected to locations through the Happened_In relationship.
+Given this graph structure and a partial question entered by the user, your task is to automatically complete the question in a way that is most relevant to the data available in the graph. Focus on generating a natural, coherent question that corresponds to the relationships and attributes described above.
+
+Input:
+A partially completed question based on the Florida graph (e.g., "Where was the...").
+
+Output Requirement:
+Complete the most likely question related to the graph. Only output the final question, don't generate anything else despite the question, and output the question even the question is far from complete, just output one.
+
+Example Input:
+"Where was the"
+
+Example Output:
+"Where was the Florida Panther observed?"
+"""
+    system_input = {
+        "role": "system",
+        "content": prompt
+    }
+
+    user_input = {
+        "role": "user",
+        "content": f"The question is {question}"
+    }
+    try:
+        response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[system_input, user_input],
+        temperature=0
+        )
+        # Filter and select top K links based on criteria (e.g., domain reliability, link text relevance)
+        response_text = response.choices[0].message.content
+        return response_text
+    except Exception as e:
+        return f"Error: {e}"
+
+
+
 dimension = 4096
 
-graph = Neo4jGraph(url="bolt://10.7.218.37:7687", username="neo4j", password="12345678")
+graph = Neo4jGraph(url="bolt://localhost:7687", username="neo4j", password="12345678")
 
 def load_llm(llm_name: str, config={}):
     if llm_name == "gpt-4":
@@ -110,23 +180,48 @@ import json
 with open('aspects.json', 'r') as f:
     json_data = json.load(f)
 
+
+
 def chat_input():
-    result = None  
-    user_input = st.chat_input("What do you want to know of animals in Florida?")
    #classification_category=re.findall(r'\{(.*?)\}', classification_category)
    # print(classification_category)
     #print(a)
+    result = None  
+    user_input_text = st.text_input("What do you want to know about animals in Florida?", key="user_input_text", value="")
+
+    #print("user_input",user_input)
+    # Initialize autocomplete suggestion
+    autocomplete_suggestion = ""
+    user_input=None
+    if user_input_text:
+        # Call Azure OpenAI for auto-completion when user types something
+        autocomplete_suggestion = get_autocomplete_suggestions(user_input_text)
+        print("autocomplete",autocomplete_suggestion)
+        # Display autocomplete suggestion in Beijing font
+        if autocomplete_suggestion:
+            st.markdown(f"Suggestion: {autocomplete_suggestion}", unsafe_allow_html=True)
+
+        # Check if user wants to accept the suggestion by pressing Tab
+        if st.button("Press Tab to Accept Suggestion"):
+            # Append the suggestion to the user input
+            user_input = autocomplete_suggestion
+        elif st.button("Press to Cancel Suggestion"):
+            user_input=user_input_text
     if user_input:
         with st.chat_message("user"):
             st.write(user_input)
+        #autocomplete_suggestion = get_autocomplete_suggestions(user_input)
         with st.chat_message("assistant"):
             st.caption(f"bot: {name}")
             stream_handler = StreamHandler(st.empty())
             if name[0] == "RAG Disabled":
+                #print("assigned RAG")
+                output_function=llm_chain
                 result = output_function(
                     {"question": user_input},callbacks=[stream_handler]
                 )["answer"]
             elif name[0] == "LLM Translator RAG":
+                translate_function=query_chain
                 temp_result=translate_function(
                     {"question": user_input}
                 )["answer"]
@@ -141,6 +236,9 @@ def chat_input():
                         {"question": user_input},callbacks=[stream_handler]
                     )
                     result=feed_result["answer"]
+                    #st.session_state[f"user_input"].append(user_input)
+                    #st.session_state[f"generated"].append(result)
+                    #st.session_state[f"rag_mode"].append(name)
                 if name[1]=="Multimedia Enabled":
                     vlla_rag_chain=generate_llava_output(
                     vllm, Graph_url=NEO4J_URL, username=NEO4J_USERNAME, password=NEO4J_PASSWORD, embeddings=embeddings, query=temp_result
@@ -150,24 +248,57 @@ def chat_input():
                         {"question": user_input},callbacks=[stream_handler]
                     )
                     result=feed_result["answer"]
+                    image_urls=feed_result["URLs"][:10]
+                    if image_urls:
+                        cols = st.columns(len(image_urls))
+                        for i, url in enumerate(image_urls):
+                            response = requests.get(url)
+                            image = Image.open(BytesIO(response.content)).convert("RGB")
+                            cols[i].image(image, caption=f"Image {i+1}", use_column_width=True)
+                    #st.session_state[f"user_input"].append(user_input)
+                    #st.session_state[f"generated"].append(result)
+                    #st.session_state[f"rag_mode"].append(name)
+            elif name[0] == "Aspects matching RAG":
+                classification_category=classfic(user_input, json_data, llm)
+                print("classification_category",classification_category)
+                #print(a)
+                if name[1]=="Multimedia Enabled":
+                    temp_chain=generate_aspect_chain(vllm_name=vllm,llm_name=llm, question=user_input, multimedia_option=name[1], aspect=classification_category, callbacks=[stream_handler])
+                    #output_function=temp_chain
+                    feed_result=temp_chain
+                    result=feed_result["answer"]
+                    st.write(result)
+                    #result=None
                     image_urls=feed_result["URLs"]
                     cols = st.columns(len(image_urls))
                     for i, url in enumerate(image_urls):
                         response = requests.get(url)
                         image = Image.open(BytesIO(response.content)).convert("RGB")
                         cols[i].image(image, caption=f"Image {i+1}", use_column_width=True)
-            elif name[0] == "Aspects matching RAG":
-                classification_category=classfic(user_input, json_data, llm)
-                print(classification_category)
-                #print(a)
-                result=generate_aspect_chain(vllm_name=vllm,llm_name=llm, question=user_input, multimedia_option=name[1], aspect=classification_category, callbacks=[stream_handler])["answer"]
+                    #st.session_state[f"user_input"].append(user_input)
+                    #st.session_state[f"generated"].append(result)
+                    #st.session_state[f"rag_mode"].append(name)
+                if name[1]=="Multimedia Disabled":
+                    temp_chain=generate_aspect_chain(vllm_name=vllm,llm_name=llm, question=user_input, multimedia_option=name[1], aspect=classification_category, callbacks=[stream_handler])
+                    #output_function=temp_chain
+                    feed_result=temp_chain
+                    result=feed_result
+                    st.write(result)
+                    #result=None
+                    #print("result is", result)
+                    #st.session_state[f"user_input"].append(user_input)
+                    #st.session_state[f"generated"].append(result)
+                    #st.session_state[f"rag_mode"].append(name)
                 #result=infer_function(question=user_input, multimedia_option=name[1], aspect=classification_category, callbacks=[stream_handler])["answer"]
             elif name[0] == "Wikidata based web agent":
-                result=web_search_agent(llm=llm, question=user_input, early_stop=10, limit_N=200, topK=2)
+                result=web_search_agent(llm=llm, question=user_input, early_stop=10, limit_N=200, topK=2, retriev_option=0)
+                st.write(result)
+            print("loaded into array")
             st.session_state[f"user_input"].append(user_input)
             st.session_state[f"generated"].append(result)
             st.session_state[f"rag_mode"].append(name)
 
+        
 def display_chat():
     # Session state
     if "generated" not in st.session_state:
@@ -184,7 +315,7 @@ def display_chat():
         size = len(st.session_state[f"generated"])
         print(size)
         # Display only the last three exchanges
-        for i in range(max(size - 3, 0), size):
+        for i in range(max(size - 100, 0), size):
             with st.chat_message("user"):
                 st.write(st.session_state[f"user_input"][i])
 
@@ -192,19 +323,8 @@ def display_chat():
                 st.caption(f"RAG: {st.session_state[f'rag_mode'][i]}")
                 st.write(st.session_state[f"generated"][i])
 
-        with st.expander("Not finding what you're looking for?"):
-            st.write(
-            "Automatically generate a draft for an internal ticket to our support team."
-            )
-            st.button(
-            "Generate ticket",
-            type="primary",
-            key="show_ticket",
-            on_click=open_sidebar,
-            )
         with st.container():
             st.write("&nbsp;")
-
 
 def open_sidebar():
     st.session_state.open_sidebar = True
@@ -229,6 +349,7 @@ def mode_select() -> list:
 
 name = mode_select()
 if name[0] == "RAG Disabled":
+    #print("assigned RAG")
     output_function = llm_chain
 elif name[0] == "LLM Translator RAG":
     translate_function = query_chain
@@ -239,3 +360,4 @@ elif name[0] == "LLM Translator RAG":
 open_sidebar()
 display_chat()
 chat_input()
+#display_chat()

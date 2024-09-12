@@ -1,7 +1,7 @@
 from neo4j import GraphDatabase
 
 # 设置Neo4j数据库连接
-NEO4J_URI = "bolt://10.7.218.37:7687"  # 替换为你的Neo4j URI
+NEO4J_URI = "bolt://localhost:7687"  # 替换为你的Neo4j URI
 NEO4J_USER = "neo4j"
 NEO4J_PASSWORD = "12345678"
 driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
@@ -195,16 +195,33 @@ def website_selection(question, website_list, topK):
 
 def judgement(question, content):
     template="""
-    Your task is to answer a given question with some supplementary materials.
-    You must not make up an answer
-    You are provided with amount of websites content
-    Don't generate anything else! Follow the Output Requirement!
-    Output Requirements:
-    If you think you can answer the question, output 'Yes' and answer the question.
-    If you think it can't adequately answer the question, just output "No", don't give anything else.
+    Your task is to respond to the given question using the content that has already been carefully retrieved to align with the question's specific requirements.
 
-    Output Example:
-    'No' or 'Yes, the answer to the question is, ...'
+You must strictly base your answer on the provided materials, ensuring no additional or speculative information is generated.
+The content you are provided with has been specifically gathered to match the question's criteria, so focus entirely on what is available.
+Do not introduce any external data or assumptions—stick closely to the provided Output Guidelines.
+Output Guidelines:
+
+If you determine that the retrieved content sufficiently answers the question, respond with 'Yes' and clearly state the answer.
+If the content is inadequate or incomplete for answering the question, simply respond with 'No' and nothing else.
+Output Example:
+
+'No' 
+'Yes, the answer to the question is, ...' 
+    """
+    template2="""
+Your task is to respond to the given question using the content that has already been carefully retrieved to align with the question's specific requirements, like retreived from a certain location or time based on the question's requirement.
+Thus just give an answer, don't always refer the material, it's just a back-up.
+Even if the exact information isn't found in the website content, you are still expected to produce an informed response.
+You have access to a wide range of website content, which should help you craft your answer.
+Strictly adhere to the output guidelines below.
+
+Output Requirements:
+
+Deliver a to the question, answer it, and material is just an addition.
+Output Example:
+
+"The answer to the question is, ..."
     """
     api_key = os.getenv('AZURE_OPENAI_API_KEY')
     base_url = os.getenv('AZURE_OPENAI_ENDPOINT')
@@ -217,7 +234,7 @@ def judgement(question, content):
     # Prepare the system and user prompts
     system_input = {
         "role": "system",
-        "content": template
+        "content": template2
     }
 
     user_input = {
@@ -280,29 +297,77 @@ def iterative_searcher(question,wikidata_list):
             website_to_brows=Extracted_topK_websites
 
     
+from sentence_transformers import SentenceTransformer
+from py2neo import Graph
+import numpy as np
+from sklearn.decomposition import PCA
+from sklearn.decomposition import TruncatedSVD
+from sklearn.metrics.pairwise import cosine_similarity
 
+sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
 
-
-def web_search_agent(llm, question, early_stop, limit_N, topK):
+def web_search_agent(llm, question, early_stop, limit_N, topK, retriev_option=0):
     #Sample all wikidata-name pairs 
-    query="""
-MATCH (n1)-[r]->(n2)
-RETURN n1.wikidata_id + " (" + n1.name + ")" + "->" + type(r) + "->" + n2.wikidata_id + " (" + n2.name + ")" AS edge_representation
-LIMIT $limit
-    """
+    if retriev_option ==0:
+        query="""
+    MATCH (n1)-[r]->(n2)
+    RETURN n1.wikidata_id + " (" + n1.name + ")" + "->" + type(r) + "->" + n2.wikidata_id + " (" + n2.name + ")" AS edge_representation
+    LIMIT 500
+        """
 
-    #Need to retreive based on query
-    with driver.session() as session:
-        result = session.run(query, question=question, limit=limit_N)
-        print(result)
+        #Need to retreive based on query
+        with driver.session() as session:
+            result = session.run(query, question=question, limit=limit_N)
+            print(result)
 
-        #First and most naive method, just use LLM to tell which top K methods are best.
-        result_dict=[]
-        for record in result:
-            node_data = {
-                "edge": record["edge_representation"],
-            }
-            result_dict.append(node_data)
+            #First and most naive method, just use LLM to tell which top K methods are best.
+            result_dict=[]
+            for record in result:
+                node_data = {
+                    "edge": record["edge_representation"],
+                }
+                result_dict.append(node_data)
+    elif retriev_option==1:
+        query="""
+    MATCH (n1)-[r]->(n2)
+    RETURN n1.wikidata_id + " (" + n1.name + ")" + "->" + type(r) + "->" + n2.wikidata_id + " (" + n2.name + ")" AS edge_representation
+        """
+        with driver.session() as session:
+            edges=session.run(query)
+            print(edges)
+
+            question_embedding = sentence_model.encode(question).reshape(1, -1)
+        
+            # For simplicity, we'll use dummy embeddings for edges here.
+            # In a real scenario, you should calculate or fetch edge embeddings.
+            #edge_embeddings = [sentence_model.encode(edge) for edge in edges]
+            
+            # Compute similarities between question and each edge
+            edge_embeddings = np.array([sentence_model.encode(edge) for edge in edges])
+    
+            # Compute similarities
+            similarities = []
+            for edge, edge_embedding in zip(edges, edge_embeddings):
+                edge_embedding = edge_embedding.reshape(1, -1)
+                similarity = cosine_similarity(edge_embedding, question_embedding)[0][0]
+                similarities.append((edge, similarity))
+            
+            result_dict = []
+            for edge, similarity in similarities:
+                node_data = {
+                    "edge": edge,
+                    "similarity": similarity
+                }
+                result_dict.append(node_data)
+
+            # Sort and get top K results
+            top_k = 500
+            top_k_results = sorted(result_dict, key=lambda x: x["similarity"], reverse=True)[:top_k]
+
+            print(top_k_results)
+            return top_k_results
+                
+    
 
     template = """
     Your task is to find and output the top K wikidata_id values that most closely match a given question. You should do this even if some of the required data is not explicitly included in the provided dictionary.
@@ -312,6 +377,7 @@ LIMIT $limit
 
     Only output the top K wikidata_id values. Do not provide any other information or responses.
     The output format should be a list, for example: [Q2697746, Q12345, Q89667, ...].
+    """
     """
     system_message_prompt = SystemMessagePromptTemplate.from_template(template)
     human_template = "The question is {question} Top K number is {topK} The dictionary is {result_dict}"
@@ -336,7 +402,7 @@ LIMIT $limit
         return answer
     
     #result_wikidatas=generate_llm_output()
-
+    """
     api_key = os.getenv('AZURE_OPENAI_API_KEY')
     base_url = os.getenv('AZURE_OPENAI_ENDPOINT')
     client = AzureOpenAI(
@@ -363,7 +429,7 @@ LIMIT $limit
     )
 
     response_text = response.choices[0].message.content
-    #print(response_text)
+    print(response_text)
     #print(a)
     final_result=iterative_searcher(question=question, wikidata_list=response_text)
     #目前不用做这一部分

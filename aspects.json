@@ -3,46 +3,32 @@
       {
         "category": "Animal Observations and Distribution",
         "questions": [
-          "In which locations in Florida can specific animals be observed?",
-          "Where have certain animals been observed recently?",
-          "What animals have been observed at specific locations?",
-          "What are the trends in animal observation records over specific time periods?"
+          "What reptiles live in Alachua?"
         ]
       },
       {
         "category": "Relationships and Interactions Between Animals",
         "questions": [
-          "What ecological relationships exist between different animals (e.g., predation, competition, symbiosis)?",
-          "Which animals are frequently observed together?",
-          "What are the natural predators of specific animals?",
-          "What animals coexist in the same habitat?"
+          "What birds feed on what amphibians in Florida?"
         ]
       },
       {
         "category": "Animal Images and Media Resources",
         "questions": [
-          "Are there images or videos of specific animals available for viewing?",
-          "Can I view recently taken images of specific animals?",
-          "What are the image links for certain animals?",
-          "How can I access a collection of animal observation images for a particular location?"
+          "What reptiles are brown in Alachua?"
         ]
       },
       {
         "category": "Conservation Status and Ecological Threats",
         "questions": [
-          "Which animals in Florida are listed as endangered or threatened species?",
-          "What are the main threats facing specific animals?",
-          "How have human activities impacted Florida's wildlife?",
-          "What is the current conservation status of specific animals?"
+          "What birds are threatened in Alachua?"
         ]
       },
       {
         "category": "Time and Trend Analysis",
         "questions": [
-          "How has the frequency of specific animal observations changed over the past five years?",
-          "Which animals are more frequently observed during different seasons?",
-          "How has the variety of animals observed at a specific location changed over the past few years?",
-          "Which animals can be observed during certain months of the year?"
+          "What's the trend of animals in Alachua from 2000 to 2024, ascending or descending?",
+          "What reptiles are observed three times in Alachua?"
         ]
       }
     ]

@@ -73,13 +73,22 @@ def Find_URLs(KG_text):
 
 def classfic(user_input, json_data, llm):
     template = """
-    You are a helpful assistant that answers questions of animals in Florida.
-    Please think step by step of what scope of dictionary can solve this question.
-    Now you are given a question and a json dictionary, you need to output which part of dictionary best covers the scope of the question.
-    Note that trends or similar words are for tendency studies, colors or other visible information are for multimedia.
-    Distribution is for interation between animals and locations. For interation between animals, refer Relationships and Interactions Between Animals. And for interation between locations, use Habitats and Ecosystems.
-    You are only required to output the scope only, don't generate anything else!
-    For example, generate 'Animal Observations and Distribution' only instead of some dict containing it.
+    
+Here’s a polished version of your prompt:
+
+You are a helpful assistant that answers questions about animals in Florida.
+Please follow these steps to identify the relevant scope of the dictionary that can address the question:
+
+Think carefully, step by step, about which section of the dictionary best fits the scope of the question.
+You are provided with a question and a JSON dictionary. Your task is to determine which part of the dictionary most appropriately addresses the question's scope.
+Guidance on scopes:
+Trends or similar words are for tendency studies.
+Colors or other visible information are for multimedia.
+Distribution covers interactions between animals and locations.
+For interactions between animals, refer to Relationships and Interactions Between Animals.
+For interactions between locations, use Habitats and Ecosystems.
+You are only required to identify and output the appropriate dictionary scope. Do not generate anything else!
+For example, simply return 'Animal Observations and Distribution' rather than a dictionary containing it.
     """
     system_message_prompt = SystemMessagePromptTemplate.from_template(template)
     human_template = "question is {question}. The aspects ditionary is {diction}"
@@ -162,71 +171,98 @@ def prompt_cypher(llm):
 
 def configure_qa_rag_chain(llm, Graph_url, username, password, embeddings, query):
     #print("multi is",multi)
-    print("query is", query)
-    kg = Neo4jVector.from_existing_relationship_index(
-        embedding=embeddings,
-        url=Graph_url,
-        username=username,
-        password=password,
-        database="neo4j",  # neo4j by default
-        index_name="relationship_vector",
-        #node_label=["Bird_name", "Location"
-        # , "Amphibian_name"],
-        #retrieval_query="""
-#MATCH (r:Reptile_name)-[o:OBSERVED_AT]->(l:Location)
-#WHERE l.name = "Alachua"           
-#RETURN r.name as Reptiles
-#        """,
-        retrieval_query=query
-    )
+
+    def error_output(user_input: str, callbacks: List[Any]):
+            return {"answer": "Failed to retrieve information for this question, try to change another way."}
     
-    #Retrieval query is to be modified.
-    #pass
-    KFSystemtemplate = """
-    Use the following pieces of context to answer the question at the end.
-    The context contains Animal, Location related information from GBIF, iNaturalist dataset.
-    If you don't know the answer, just say that you don't know, don't try to make up an answer.
-    Don't generate URL links.
-    ----
-    {summaries}
-    ----
-    The context is about Florida, USA.
-    """
-    general_user_template = "Question:```{question}```"
-    messages = [
-        SystemMessagePromptTemplate.from_template(KFSystemtemplate),
-        HumanMessagePromptTemplate.from_template(general_user_template),
-    ]
-    qa_prompt = ChatPromptTemplate.from_messages(messages)
-    #print(messages)
-    qa_chain = load_qa_with_sources_chain(
-        llm,
-        chain_type="stuff",
-        prompt=qa_prompt,
-    )
 
-
-    kg_qa = RetrievalQAWithSourcesChain(
-        combine_documents_chain=qa_chain,
-        retriever=kg.as_retriever(),
-        reduce_k_below_max_tokens=False,
-        max_tokens_limit=999999,
-    )
-
-    return kg_qa
-
-def generate_llava_output(vllm,  Graph_url, username, password, embeddings, query):
-        #print(re.search(r'\{(.+?)\}',"{Neo4jquery}").group(1))
-        #print("multi is",multi)
-        graph = Neo4jGraph(url="bolt://10.7.218.37:7687", username="neo4j", password="12345678")
-        Kg_output=graph.query(
-            """
-MATCH (r:Bird_name)-[o:OBSERVED_AT]->(l:Location)
-WHERE l.name = "Alachua"           
-RETURN r.name AS Bird, o.multimedia AS MultimediaInfo
-            """
+    try:
+        print("query is", query)
+        kg = Neo4jVector.from_existing_relationship_index(
+            embedding=embeddings,
+            url=Graph_url,
+            username=username,
+            password=password,
+            database="neo4j",  # neo4j by default
+            index_name="relationship_vector",
+            #node_label=["Bird_name", "Location"
+            # , "Amphibian_name"],
+            #retrieval_query="""
+    #MATCH (r:Reptile_name)-[o:OBSERVED_AT]->(l:Location)
+    #WHERE l.name = "Alachua"           
+    #RETURN r.name as Reptiles
+    #        """,
+            retrieval_query=query
+        )
+        
+        #Retrieval query is to be modified.
+        #pass
+        KFSystemtemplate = """
+        Use the following pieces of context to answer the question at the end.
+        The context contains Animal, Location related information from GBIF, iNaturalist dataset.
+        If you don't know the answer, just say that you don't know, don't try to make up an answer.
+        Don't generate URL links.
+        ----
+        {summaries}
+        ----
+        The context is about Florida, USA.
+        """
+        general_user_template = "Question:```{question}```"
+        messages = [
+            SystemMessagePromptTemplate.from_template(KFSystemtemplate),
+            HumanMessagePromptTemplate.from_template(general_user_template),
+        ]
+        qa_prompt = ChatPromptTemplate.from_messages(messages)
+        #print(messages)
+        qa_chain = load_qa_with_sources_chain(
+            llm,
+            chain_type="stuff",
+            prompt=qa_prompt,
         )
 
+        try:
+            kg_qa = RetrievalQAWithSourcesChain(
+                combine_documents_chain=qa_chain,
+                retriever=kg.as_retriever(),
+                reduce_k_below_max_tokens=False,
+                max_tokens_limit=999999,
+            )
+
+            return kg_qa
+        except Exception as e:
+            return error_output
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        # Optionally, you can return a default value or handle the error as needed
+        return "The converted cypher query can't be implemented"
+
+def generate_llava_output(vllm,  Graph_url, username, password, embeddings, query):
+    #print(re.search(r'\{(.+?)\}',"{Neo4jquery}").group(1))
+    #print("multi is",multi)
+    #try:
+        graph = Neo4jGraph(url="bolt://localhost:7687", username="neo4j", password="12345678")
+        #Kg_output=graph.query(
+        #    """
+    #MATCH (r:Bird_name)-[o:OBSERVED_AT]->(l:Location)
+    #WHERE l.name = "Alachua"           
+    #RETURN r.name AS Bird, o.multimedia AS MultimediaInfo
+    #            """
+    #        )
+
+        def error_output(user_input: str, callbacks: List[Any]):
+            return {"answer": "Failed to retrieve information,ask multimedia information only, not what's inside mueltimedia.", "URLs": []}
+        try:
+            Kg_output=graph.query(
+                query
+            )
+        except Exception as e:
+        # Handle the error and return a user-friendly message
+            error_message = "An error occurred while querying the graph. Please check the query and try again."
+            print(f"Error: {e}")  # Log the error for debugging purposes
+            Kg_output="Retrieval result is none"
+            return error_output
+        if not Kg_output:
+            return error_output
         print("Kg_output is",Kg_output)
         KG_results="""
         You are a helpful assistant that answers questions of animals in Florida.
@@ -275,6 +311,9 @@ RETURN r.name AS Bird, o.multimedia AS MultimediaInfo
                 print(answer)
                 return {"answer": answer, "URLs": image_URLs}
         return generate_vllm_output
+    #except Exception as e:
+    #    print(f"An error occurred while querying the graph or processing data: {e}")
+    #    return lambda user_input, callbacks: {"answer": "An error occurred while processing your request.", "URLs": []}
 
 
 
